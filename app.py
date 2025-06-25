@@ -3,6 +3,7 @@ import requests
 import feedparser
 import hashlib
 from apscheduler.schedulers.background import BackgroundScheduler
+import threading
 import time
 
 app = Flask(__name__)
@@ -26,7 +27,6 @@ def fetch_and_push():
             for entry in feed.entries:
                 uid = hashlib.md5((entry.link + entry.title).encode('utf-8')).hexdigest()
                 if uid not in posted_hashes:
-                    print(f"[INFO] 新内容：{entry.title}")
                     content = {
                         "msgtype": "markdown",
                         "markdown": {
@@ -35,21 +35,18 @@ def fetch_and_push():
                     }
                     resp = requests.post(WEBHOOK_URL, json=content)
                     if resp.status_code == 200:
-                        print("[OK] 已成功推送到企业微信")
+                        print(f"[OK] 已推送：{entry.title}")
                         posted_hashes.add(uid)
                     else:
-                        print(f"[ERROR] 推送失败，状态码：{resp.status_code}")
+                        print(f"[ERROR] 推送失败：{resp.status_code}")
         except Exception as e:
             print(f"[ERROR] 抓取失败：{e}")
 
-# 启动后立刻运行一次
-@app.before_first_request
-def init_scheduler():
-    fetch_and_push()
+def start_scheduler():
     scheduler = BackgroundScheduler()
     scheduler.add_job(fetch_and_push, 'interval', minutes=5)
     scheduler.start()
-    print("[INFO] 定时任务已启动")
+    print("[INFO] 定时器已启动")
 
 @app.route("/")
 def index():
@@ -61,7 +58,7 @@ def follow_push():
         data = request.get_json(force=True)
         title = data.get("title", "No title")
         link = data.get("link", "#")
-        print(f"[INFO] 收到 follow webhook 推送：{title}")
+        print(f"[INFO] 收到 follow webhook：{title}")
         content = {
             "msgtype": "markdown",
             "markdown": {
@@ -77,4 +74,6 @@ def follow_push():
         return jsonify({"error": str(e)}), 400
 
 if __name__ == "__main__":
+    threading.Thread(target=start_scheduler).start()  # 后台线程启动定时器
+    fetch_and_push()  # 启动时先执行一次
     app.run(host="0.0.0.0", port=10000)
