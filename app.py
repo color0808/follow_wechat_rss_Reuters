@@ -8,7 +8,7 @@ import time
 
 app = Flask(__name__)
 
-WEBHOOK_URL = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=你的key"
+WEBHOOK_URL = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=9a895067-7663-4169-ac17-a7697d2693fe"
 RSS_FEEDS = [
     "https://rsshub.app/reuters/world",
     "https://rsshub.app/reuters/world/china",
