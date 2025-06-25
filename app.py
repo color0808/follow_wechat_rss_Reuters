@@ -1,14 +1,18 @@
-from flask import Flask, request, jsonify
-import requests
+from pathlib import Path
+
+# 生成更新后的app.py内容，使用用户指定的精简格式
+app_py_content = '''
 import feedparser
-import hashlib
+import requests
+from flask import Flask
 from apscheduler.schedulers.background import BackgroundScheduler
-import threading
-import time
 
 app = Flask(__name__)
 
+# 企业微信Webhook地址
 WEBHOOK_URL = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=9a895067-7663-4169-ac17-a7697d2693fe"
+
+# RSS订阅源列表
 RSS_FEEDS = [
     "https://rsshub.app/reuters/world",
     "https://rsshub.app/reuters/world/china",
@@ -16,64 +20,44 @@ RSS_FEEDS = [
     "https://reutersnew.buzzing.cc/feed.xml"
 ]
 
-posted_hashes = set()
+# 存储已发送文章链接，避免重复发送
+sent_entries = set()
 
 def fetch_and_push():
-    print("[INFO] 开始抓取 RSS 源")
-    for url in RSS_FEEDS:
-        try:
-            print(f"[INFO] 抓取：{url}")
-            feed = feedparser.parse(url)
-            for entry in feed.entries:
-                uid = hashlib.md5((entry.link + entry.title).encode('utf-8')).hexdigest()
-                if uid not in posted_hashes:
-                    content = {
-                        "msgtype": "markdown",
-                        "markdown": {
-                            "content": f"### {entry.title}\n[阅读原文]({entry.link})"
-                        }
-                    }
-                    resp = requests.post(WEBHOOK_URL, json=content)
-                    if resp.status_code == 200:
-                        print(f"[OK] 已推送：{entry.title}")
-                        posted_hashes.add(uid)
-                    else:
-                        print(f"[ERROR] 推送失败：{resp.status_code}")
-        except Exception as e:
-            print(f"[ERROR] 抓取失败：{e}")
-
-def start_scheduler():
-    scheduler = BackgroundScheduler()
-    scheduler.add_job(fetch_and_push, 'interval', minutes=5)
-    scheduler.start()
-    print("[INFO] 定时器已启动")
-
-@app.route("/")
-def index():
-    return "RSS WeChat Pusher is running."
-
-@app.route("/follow", methods=["POST"])
-def follow_push():
-    try:
-        data = request.get_json(force=True)
-        title = data.get("title", "No title")
-        link = data.get("link", "#")
-        print(f"[INFO] 收到 follow webhook：{title}")
-        content = {
-            "msgtype": "markdown",
-            "markdown": {
-                "content": f"### {title}\n[阅读原文]({link})"
+    for feed_url in RSS_FEEDS:
+        feed = feedparser.parse(feed_url)
+        for entry in feed.entries[:5]:
+            if entry.link in sent_entries:
+                continue
+            sent_entries.add(entry.link)
+            # 构造精简格式推送内容
+            content = f"【{feed.feed.title}】{entry.title}\\n📅 {entry.published}\\n🔗 {entry.link}"
+            data = {
+                "msgtype": "text",
+                "text": {
+                    "content": content
+                }
             }
-        }
-        resp = requests.post(WEBHOOK_URL, json=content)
-        if resp.status_code == 200:
-            return jsonify({"status": "success"}), 200
-        else:
-            return jsonify({"status": "failed", "code": resp.status_code}), 500
-    except Exception as e:
-        return jsonify({"error": str(e)}), 400
+            try:
+                requests.post(WEBHOOK_URL, json=data)
+            except Exception as e:
+                print("推送失败:", e)
 
-if __name__ == "__main__":
-    threading.Thread(target=start_scheduler).start()  # 后台线程启动定时器
-    fetch_and_push()  # 启动时先执行一次
-    app.run(host="0.0.0.0", port=10000)
+# 定时任务：每30分钟检查一次新文章
+scheduler = BackgroundScheduler()
+scheduler.add_job(fetch_and_push, 'interval', minutes=30)
+scheduler.start()
+
+@app.route('/')
+def index():
+    return "Follow.is → 企业微信机器人 推送器"
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=10000)
+'''
+
+# 写入到本地文件
+output_path = "/mnt/data/app.py"
+Path(output_path).write_text(app_py_content)
+
+output_path
